@@ -2,9 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  output: 'export',
+  trailingSlash: true,
+  basePath: process.env.NODE_ENV === 'production' ? '/dayone-blog-automation' : '',
+  assetPrefix: process.env.NODE_ENV === 'production' ? '/dayone-blog-automation/' : '',
   images: {
-    domains: [],
-    formats: ['image/webp', 'image/avif'],
+    unoptimized: true, // Required for static export
   },
   async rewrites() {
     return [
