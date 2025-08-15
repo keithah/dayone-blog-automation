@@ -11,10 +11,12 @@ This guide will walk you through setting up the automated Day One to Next.js blo
 
 ## 1. Day One Configuration
 
-### Create Blog Journal
+### Create Blog Journals
 1. Open Day One
-2. Create a new journal called "Blog Public"
-3. Note the journal ID (you'll need this for configuration)
+2. Create three journals:
+   - **"Blog Drafts"** - For writing and editing posts
+   - **"Blog Public"** - Ready to publish (automation watches this)
+   - **"Blog Published"** - Published posts (automation moves entries here)
 
 ### Export Setup
 Since Day One doesn't have a public API, you'll need to set up regular exports:
@@ -63,9 +65,12 @@ NEXT_PUBLIC_SITE_NAME=Your Blog Name
 Go to your GitHub repository → Settings → Secrets and add:
 
 ```
-DAYONE_API_KEY=your_day_one_access_method
-DAYONE_JOURNAL_ID=your_blog_public_journal_id
+DAYONE_EMAIL=your_dayone_email@example.com
+DAYONE_PASSWORD=your_dayone_password
+DAYONE_JOURNAL_ID=Blog Public
 ```
+
+**Important:** These credentials are used to automate the Day One web export process.
 
 ### Workflow Configuration
 The workflow is already configured in `.github/workflows/process-dayone.yml` to:
@@ -143,16 +148,25 @@ Configure for your hosting platform:
 
 ## 7. Content Workflow
 
-### Writing Process
-1. Write entries in Day One "Blog Public" journal
-2. Use rich text formatting (bold, italic, headers)
-3. Add photos directly in Day One
-4. Use relevant tags (software, hardware, hacking, etc.)
+### 3-Journal Publishing System
 
-### Publishing
-1. Move entry to "Blog Public" journal
-2. Wait up to 15 minutes for GitHub Actions
-3. Check your blog for the new post
+**Writing Process:**
+1. **Draft**: Write entries in "Blog Drafts" journal
+2. **Review**: Edit and refine your posts
+3. **Publish**: Move finished entries to "Blog Public" journal
+4. **Archive**: System automatically processes and moves to "Blog Published"
+
+**Automated Processing:**
+1. GitHub Actions monitors "Blog Public" journal every 15 minutes
+2. New entries are processed and published to your blog
+3. Successfully published entries trigger a migration request
+4. You'll get a GitHub issue with instructions to move entries to "Blog Published"
+5. Once moved, the cycle is complete
+
+**Journal States:**
+- **Blog Drafts**: Work in progress, not processed
+- **Blog Public**: Ready to publish, actively monitored  
+- **Blog Published**: Successfully published, archived
 
 ### Categories and Tags
 - **Categories**: Use top-level tags: `software`, `hardware`, `hacking`

@@ -8,6 +8,7 @@ const sharp = require('sharp');
 const exifr = require('exifr');
 const cheerio = require('cheerio');
 const yaml = require('js-yaml');
+const JournalStateTracker = require('../lib/journalStateTracker');
 
 class DayOneProcessor {
   constructor() {
@@ -19,6 +20,7 @@ class DayOneProcessor {
     
     this.ensureDirectories();
     this.processedEntries = this.loadProcessedEntries();
+    this.stateTracker = new JournalStateTracker();
   }
 
   ensureDirectories() {
@@ -51,15 +53,35 @@ class DayOneProcessor {
 
   async fetchDayOneEntries() {
     try {
-      // Mock Day One API call - replace with actual Day One export/API
-      console.log('Fetching Day One entries...');
+      console.log('Starting 3-journal workflow...');
       
-      // For now, simulate API response
-      // In real implementation, use Day One's JSON export or API
-      return [];
+      const JournalManager = require('../lib/journalManager');
+      const journalManager = new JournalManager();
+      
+      try {
+        // Process the 3-journal workflow
+        const { newEntries, entriesToMove, allPublicEntries } = await journalManager.processJournalWorkflow();
+        
+        // Update state tracking
+        this.stateTracker.updateJournalSnapshot('Blog Public', allPublicEntries);
+        
+        // Store journal management data for later use
+        this.journalData = {
+          newEntries,
+          entriesToMove,
+          allPublicEntries
+        };
+        
+        console.log(`Returning ${newEntries.length} new entries for processing`);
+        return newEntries;
+        
+      } finally {
+        // Clean up temporary files
+        journalManager.cleanup();
+      }
       
     } catch (error) {
-      console.error('Error fetching Day One entries:', error);
+      console.error('Error in journal workflow:', error);
       throw error;
     }
   }
@@ -303,9 +325,13 @@ class DayOneProcessor {
       const entries = await this.fetchDayOneEntries();
       console.log(`Found ${entries.length} entries to process`);
 
+      // Process new entries from Blog Public
       for (const entry of entries) {
         await this.processEntry(entry);
       }
+
+      // Handle journal migration after processing
+      await this.handleJournalMigration();
 
       this.saveProcessedEntries();
       console.log('Day One processing completed successfully');
@@ -314,6 +340,98 @@ class DayOneProcessor {
       console.error('Day One processing failed:', error);
       await this.createGitHubIssue('Day One Processing Failed', error);
       process.exit(1);
+    }
+  }
+
+  async handleJournalMigration() {
+    if (!this.journalData || !this.journalData.entriesToMove || this.journalData.entriesToMove.length === 0) {
+      console.log('No entries to migrate between journals');
+      return;
+    }
+
+    try {
+      console.log(`Processing journal migration for ${this.journalData.entriesToMove.length} entries...`);
+      
+      const JournalManager = require('../lib/journalManager');
+      const journalManager = new JournalManager();
+      
+      // Track this migration request
+      const migrationId = this.stateTracker.trackMigrationRequest(this.journalData.entriesToMove);
+      
+      // Generate migration commands/instructions
+      const migrationCommands = await journalManager.createJournalMigrationCommands(this.journalData.entriesToMove);
+      
+      // Create a migration report
+      const migrationReport = {
+        migrationId,
+        timestamp: new Date().toISOString(),
+        totalEntries: this.journalData.entriesToMove.length,
+        commands: migrationCommands,
+        instructions: [
+          'The following entries have been published and should be moved from Blog Public to Blog Published:',
+          '',
+          'Manual steps required:',
+          '1. Open Day One app',
+          '2. Select the entries listed below from Blog Public journal',
+          '3. Move them to Blog Published journal',
+          '',
+          'Entries to move:'
+        ]
+      };
+
+      // Save migration report
+      const reportPath = path.join(__dirname, '..', 'data', `migration-report-${Date.now()}.json`);
+      const reportDir = path.dirname(reportPath);
+      if (!fs.existsSync(reportDir)) {
+        fs.mkdirSync(reportDir, { recursive: true });
+      }
+      
+      fs.writeFileSync(reportPath, JSON.stringify(migrationReport, null, 2));
+      
+      // Create GitHub issue with migration instructions
+      await this.createJournalMigrationIssue(migrationReport);
+      
+      console.log(`Migration report saved: ${reportPath}`);
+      
+    } catch (error) {
+      console.error('Journal migration handling failed:', error);
+      await this.createGitHubIssue('Journal Migration Failed', error);
+    }
+  }
+
+  async createJournalMigrationIssue(migrationReport) {
+    const issueBody = `## Journal Migration Required
+
+${migrationReport.totalEntries} entries have been published and need to be moved from **Blog Public** to **Blog Published**.
+
+### Entries to Move:
+
+${migrationReport.commands.map(cmd => 
+  `- **${cmd.title}** (UUID: \`${cmd.uuid}\`)`
+).join('\n')}
+
+### Manual Steps:
+1. Open Day One app
+2. Go to **Blog Public** journal  
+3. Select the entries listed above
+4. Move them to **Blog Published** journal
+5. Close this issue when complete
+
+**Migration Report:** Generated at ${migrationReport.timestamp}
+
+🤖 Automated journal migration tracking`;
+
+    try {
+      // In GitHub Actions, this would use the GitHub API
+      console.log('Would create GitHub issue for journal migration:');
+      console.log('Title: Journal Migration Required - Move Published Entries');
+      console.log('Body:', issueBody);
+      
+      // For now, just log the issue content
+      // In real implementation, use GitHub REST API to create issue
+      
+    } catch (error) {
+      console.error('Failed to create migration issue:', error);
     }
   }
 }

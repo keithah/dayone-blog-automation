@@ -27,7 +27,8 @@ jobs:
     
     - name: Process Day One entries
       env:
-        DAYONE_API_KEY: ${{ secrets.DAYONE_API_KEY }}
+        DAYONE_EMAIL: ${{ secrets.DAYONE_EMAIL }}
+        DAYONE_PASSWORD: ${{ secrets.DAYONE_PASSWORD }}
         DAYONE_JOURNAL_ID: ${{ secrets.DAYONE_JOURNAL_ID }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm run process-dayone

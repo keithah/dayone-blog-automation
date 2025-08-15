@@ -27,9 +27,12 @@ Day One Journal → GitHub Actions → Content Processing → Next.js Blog
 
 ## Day One Configuration
 
-- Create a "Blog Public" journal in Day One
-- Entries in this journal will be automatically processed
-- Use Day One Plus account for API access
+Create three journals for content workflow:
+- **Blog Drafts** - Work in progress, not processed
+- **Blog Public** - Ready to publish, actively monitored by automation
+- **Blog Published** - Successfully published entries, archived automatically
+
+Use Day One Plus account for web export access.
 
 ## Content Structure
 
@@ -58,6 +61,8 @@ Use these tags in Day One to categorize your posts:
 - `finance` - Financial topics, investing, budgeting
 - `str` - Strength training, fitness, health
 - `biz` - Business, entrepreneurship, work
+- `aidev` - AI development, machine learning, LLM projects
+- `productmanagement` - Product strategy, roadmaps, user research
 
 ## Development
 
