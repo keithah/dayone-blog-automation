@@ -133,7 +133,7 @@ class DayOneProcessor {
         const date = new Date(entry.creationDate);
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
-        const imagePath = `/images/${year}/${month}/${attachment.filename}`;
+        const imagePath = `images/${year}/${month}/${attachment.filename}`;
         return `![Image](${imagePath})`;
       }
       return match;
