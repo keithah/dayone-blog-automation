@@ -40,6 +40,16 @@ data/
 temp/
 *.dayone
 
+# Day One automation artifacts
+debug-*.png
+export-*.png
+playwright-*.png
+*.chlz
+*.har
+test-*.json
+test-*.js
+/tmp/dayone-downloads/
+
 # OS
 .DS_Store
 Thumbs.db
