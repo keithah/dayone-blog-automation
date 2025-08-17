@@ -2,25 +2,23 @@
 
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const matter = require('gray-matter');
 const sharp = require('sharp');
 const exifr = require('exifr');
-const cheerio = require('cheerio');
-const yaml = require('js-yaml');
-const JournalStateTracker = require('../lib/journalStateTracker');
+const DayOneApiExporter = require('../lib/dayOneApiExporter');
 
 class DayOneProcessor {
   constructor() {
-    this.apiKey = process.env.DAYONE_API_KEY;
-    this.journalId = process.env.DAYONE_JOURNAL_ID;
+    this.email = process.env.DAYONE_EMAIL;
+    this.password = process.env.DAYONE_PASSWORD;
+    this.journalName = process.env.DAYONE_JOURNAL_ID || 'Blog Public';
     this.processedEntriesPath = path.join(__dirname, '..', 'data', 'processed.json');
     this.postsDir = path.join(__dirname, '..', 'posts');
     this.imagesDir = path.join(__dirname, '..', 'images');
     
     this.ensureDirectories();
     this.processedEntries = this.loadProcessedEntries();
-    this.stateTracker = new JournalStateTracker();
+    this.apiExporter = new DayOneApiExporter();
   }
 
   ensureDirectories() {
@@ -53,35 +51,28 @@ class DayOneProcessor {
 
   async fetchDayOneEntries() {
     try {
-      console.log('Starting 3-journal workflow...');
+      console.log('🚀 Starting Day One API export...');
       
-      const JournalManager = require('../lib/journalManager');
-      const journalManager = new JournalManager();
+      // Export journal using API
+      const exportFile = await this.apiExporter.exportJournal();
+      console.log(`✅ Export file created: ${exportFile}`);
       
-      try {
-        // Process the 3-journal workflow
-        const { newEntries, entriesToMove, allPublicEntries } = await journalManager.processJournalWorkflow();
-        
-        // Update state tracking
-        this.stateTracker.updateJournalSnapshot('Blog Public', allPublicEntries);
-        
-        // Store journal management data for later use
-        this.journalData = {
-          newEntries,
-          entriesToMove,
-          allPublicEntries
-        };
-        
-        console.log(`Returning ${newEntries.length} new entries for processing`);
-        return newEntries;
-        
-      } finally {
-        // Clean up temporary files
-        journalManager.cleanup();
-      }
+      // Parse the export
+      const entries = await this.apiExporter.extractAndParseExport(exportFile);
+      console.log(`✅ Found ${entries.length} entries`);
+      
+      // Filter out already processed entries
+      const newEntries = entries.filter(entry => {
+        const lastModified = entry.modifiedDate || entry.creationDate;
+        return !this.processedEntries[entry.uuid] || 
+               this.processedEntries[entry.uuid].lastModified < lastModified;
+      });
+      
+      console.log(`Found ${newEntries.length} new/updated entries to process`);
+      return newEntries;
       
     } catch (error) {
-      console.error('Error in journal workflow:', error);
+      console.error('Error in Day One API export:', error);
       throw error;
     }
   }
@@ -131,18 +122,22 @@ class DayOneProcessor {
   }
 
   async processContent(entry) {
-    // Convert Day One rich text to Markdown
-    // This is a simplified version - real implementation would need
-    // to handle Day One's rich text format properly
-    let content = entry.text || entry.richText || '';
+    // Convert Day One markdown content
+    let content = entry.text || '';
     
-    // Basic rich text to markdown conversion
-    content = content
-      .replace(/\*\*(.*?)\*\*/g, '**$1**')  // Bold
-      .replace(/\*(.*?)\*/g, '*$1*')        // Italic
-      .replace(/^# (.*$)/gm, '# $1')        // Headers
-      .replace(/^## (.*$)/gm, '## $1')
-      .replace(/^### (.*$)/gm, '### $1');
+    // Process Day One image references
+    content = content.replace(/!\[\]\(dayone-moment:\/\/([A-F0-9]+)\)/g, (match, momentId) => {
+      // Find corresponding attachment
+      const attachment = entry.attachments?.find(att => att.identifier === momentId);
+      if (attachment) {
+        const date = new Date(entry.creationDate);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const imagePath = `/images/${year}/${month}/${attachment.filename}`;
+        return `![Image](${imagePath})`;
+      }
+      return match;
+    });
 
     return content;
   }
@@ -150,18 +145,18 @@ class DayOneProcessor {
   async processImages(entry) {
     const processedImages = [];
     
-    if (!entry.photos || entry.photos.length === 0) {
+    if (!entry.attachments || entry.attachments.length === 0) {
       return processedImages;
     }
 
-    for (const photo of entry.photos) {
+    for (const attachment of entry.attachments) {
       try {
-        const imageInfo = await this.downloadAndProcessImage(photo, entry);
+        const imageInfo = await this.processAttachment(attachment, entry);
         processedImages.push(imageInfo);
       } catch (error) {
-        console.error(`Error processing image ${photo.identifier}:`, error);
+        console.error(`Error processing attachment ${attachment.identifier}:`, error);
         await this.createGitHubIssue(
-          `Image Processing Error: ${photo.identifier}`, 
+          `Image Processing Error: ${attachment.identifier}`, 
           error
         );
       }
@@ -170,7 +165,7 @@ class DayOneProcessor {
     return processedImages;
   }
 
-  async downloadAndProcessImage(photo, entry) {
+  async processAttachment(attachment, entry) {
     const date = new Date(entry.creationDate);
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -180,43 +175,55 @@ class DayOneProcessor {
       fs.mkdirSync(imageDir, { recursive: true });
     }
 
-    const filename = `${photo.identifier}.png`;
+    const filename = attachment.filename;
     const imagePath = path.join(imageDir, filename);
     const relativePath = `images/${year}/${month}/${filename}`;
 
-    // Download image (mock implementation)
-    console.log(`Processing image: ${filename}`);
-    
-    // In real implementation:
-    // 1. Download image from Day One
-    // 2. Strip EXIF data using exifr
-    // 3. Optimize with sharp if needed
-    // 4. Save to disk
+    // Copy image from download directory to final location
+    const downloadPath = path.join('/tmp/dayone-downloads', filename);
+    if (fs.existsSync(downloadPath)) {
+      console.log(`Processing image: ${filename}`);
+      
+      try {
+        // Strip EXIF data and optimize image
+        await sharp(downloadPath)
+          .rotate() // Auto-rotate based on EXIF
+          .jpeg({ quality: 90 })
+          .toFile(imagePath);
+        
+        console.log(`✅ Processed and saved: ${relativePath}`);
+      } catch (error) {
+        console.warn(`Failed to process with Sharp, copying directly: ${error.message}`);
+        fs.copyFileSync(downloadPath, imagePath);
+      }
+    } else {
+      console.warn(`⚠️  Attachment file not found: ${downloadPath}`);
+    }
 
     return {
       filename,
       path: relativePath,
-      altText: photo.caption || '',
-      originalId: photo.identifier
+      altText: '',
+      originalId: attachment.identifier
     };
   }
 
   async processLinks(entry) {
-    // Extract and process links from content
+    // Extract and process links from markdown content
     const content = entry.text || '';
-    const $ = cheerio.load(`<div>${content}</div>`);
     const links = [];
-
-    $('a').each((i, elem) => {
-      const url = $(elem).attr('href');
-      if (url) {
-        links.push({
-          original: url,
-          cleaned: this.cleanUrl(url),
-          text: $(elem).text()
-        });
-      }
-    });
+    
+    // Simple regex to find URLs in markdown content
+    const urlRegex = /https?:\/\/[^\s)]+/g;
+    const matches = content.match(urlRegex) || [];
+    
+    for (const url of matches) {
+      links.push({
+        original: url,
+        cleaned: this.cleanUrl(url),
+        text: url
+      });
+    }
 
     return links;
   }
@@ -254,16 +261,27 @@ class DayOneProcessor {
   }
 
   generateFrontmatter(entry, images) {
-    const date = new Date(entry.creationDate);
+    // Extract title from first line or use default
+    const content = entry.text || '';
+    const firstLine = content.split('\n')[0].trim();
+    const title = firstLine.startsWith('#') ? firstLine.replace(/^#+\s*/, '') : (entry.title || 'Untitled');
     
     return {
-      title: entry.title || 'Untitled',
-      publishDate: entry.creationDate,
-      editDate: entry.modifiedDate || entry.creationDate,
+      title: title,
+      publishDate: new Date(entry.creationDate).toISOString(),
+      editDate: new Date(entry.modifiedDate || entry.creationDate).toISOString(),
       uuid: entry.uuid,
       tags: entry.tags || [],
       category: this.determineCategory(entry.tags || []),
-      images: images.map(img => img.filename)
+      images: images.map(img => img.filename),
+      location: entry.location ? {
+        name: entry.location.placeName || entry.location.localityName,
+        coordinates: [entry.location.longitude, entry.location.latitude]
+      } : null,
+      weather: entry.weather ? {
+        description: entry.weather.description,
+        temperature: entry.weather.tempCelsius
+      } : null
     };
   }
 
@@ -320,118 +338,33 @@ class DayOneProcessor {
 
   async run() {
     try {
-      console.log('Starting Day One processing...');
+      console.log('🚀 Starting Day One processing...');
       
       const entries = await this.fetchDayOneEntries();
       console.log(`Found ${entries.length} entries to process`);
 
-      // Process new entries from Blog Public
+      if (entries.length === 0) {
+        console.log('✅ No new entries to process');
+        return;
+      }
+
+      // Process new entries
       for (const entry of entries) {
         await this.processEntry(entry);
       }
 
-      // Handle journal migration after processing
-      await this.handleJournalMigration();
-
       this.saveProcessedEntries();
-      console.log('Day One processing completed successfully');
+      console.log('✅ Day One processing completed successfully');
       
     } catch (error) {
-      console.error('Day One processing failed:', error);
+      console.error('❌ Day One processing failed:', error);
       await this.createGitHubIssue('Day One Processing Failed', error);
       process.exit(1);
-    }
-  }
-
-  async handleJournalMigration() {
-    if (!this.journalData || !this.journalData.entriesToMove || this.journalData.entriesToMove.length === 0) {
-      console.log('No entries to migrate between journals');
-      return;
-    }
-
-    try {
-      console.log(`Processing journal migration for ${this.journalData.entriesToMove.length} entries...`);
-      
-      const JournalManager = require('../lib/journalManager');
-      const journalManager = new JournalManager();
-      
-      // Track this migration request
-      const migrationId = this.stateTracker.trackMigrationRequest(this.journalData.entriesToMove);
-      
-      // Generate migration commands/instructions
-      const migrationCommands = await journalManager.createJournalMigrationCommands(this.journalData.entriesToMove);
-      
-      // Create a migration report
-      const migrationReport = {
-        migrationId,
-        timestamp: new Date().toISOString(),
-        totalEntries: this.journalData.entriesToMove.length,
-        commands: migrationCommands,
-        instructions: [
-          'The following entries have been published and should be moved from Blog Public to Blog Published:',
-          '',
-          'Manual steps required:',
-          '1. Open Day One app',
-          '2. Select the entries listed below from Blog Public journal',
-          '3. Move them to Blog Published journal',
-          '',
-          'Entries to move:'
-        ]
-      };
-
-      // Save migration report
-      const reportPath = path.join(__dirname, '..', 'data', `migration-report-${Date.now()}.json`);
-      const reportDir = path.dirname(reportPath);
-      if (!fs.existsSync(reportDir)) {
-        fs.mkdirSync(reportDir, { recursive: true });
+    } finally {
+      // Cleanup
+      if (this.apiExporter) {
+        this.apiExporter.cleanup();
       }
-      
-      fs.writeFileSync(reportPath, JSON.stringify(migrationReport, null, 2));
-      
-      // Create GitHub issue with migration instructions
-      await this.createJournalMigrationIssue(migrationReport);
-      
-      console.log(`Migration report saved: ${reportPath}`);
-      
-    } catch (error) {
-      console.error('Journal migration handling failed:', error);
-      await this.createGitHubIssue('Journal Migration Failed', error);
-    }
-  }
-
-  async createJournalMigrationIssue(migrationReport) {
-    const issueBody = `## Journal Migration Required
-
-${migrationReport.totalEntries} entries have been published and need to be moved from **Blog Public** to **Blog Published**.
-
-### Entries to Move:
-
-${migrationReport.commands.map(cmd => 
-  `- **${cmd.title}** (UUID: \`${cmd.uuid}\`)`
-).join('\n')}
-
-### Manual Steps:
-1. Open Day One app
-2. Go to **Blog Public** journal  
-3. Select the entries listed above
-4. Move them to **Blog Published** journal
-5. Close this issue when complete
-
-**Migration Report:** Generated at ${migrationReport.timestamp}
-
-🤖 Automated journal migration tracking`;
-
-    try {
-      // In GitHub Actions, this would use the GitHub API
-      console.log('Would create GitHub issue for journal migration:');
-      console.log('Title: Journal Migration Required - Move Published Entries');
-      console.log('Body:', issueBody);
-      
-      // For now, just log the issue content
-      // In real implementation, use GitHub REST API to create issue
-      
-    } catch (error) {
-      console.error('Failed to create migration issue:', error);
     }
   }
 }
