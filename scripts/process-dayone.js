@@ -14,7 +14,7 @@ class DayOneProcessor {
     this.journalName = process.env.DAYONE_JOURNAL_ID || 'Blog Public';
     this.processedEntriesPath = path.join(__dirname, '..', 'data', 'processed.json');
     this.postsDir = path.join(__dirname, '..', 'posts');
-    this.imagesDir = path.join(__dirname, '..', 'images');
+    this.imagesDir = path.join(__dirname, '..', 'public', 'images');
     
     this.ensureDirectories();
     this.processedEntries = this.loadProcessedEntries();
@@ -138,6 +138,15 @@ class DayOneProcessor {
       }
       return match;
     });
+
+    // Remove title from content if it's the first line (to avoid duplication in frontmatter)
+    const lines = content.split('\n');
+    const firstLine = lines[0].trim();
+    
+    // If first line looks like a title (not a header, image, or URL), remove it from content
+    if (firstLine && !firstLine.startsWith('#') && !firstLine.startsWith('!') && !firstLine.startsWith('http')) {
+      content = lines.slice(1).join('\n').trim();
+    }
 
     return content;
   }
@@ -264,7 +273,19 @@ class DayOneProcessor {
     // Extract title from first line or use default
     const content = entry.text || '';
     const firstLine = content.split('\n')[0].trim();
-    const title = firstLine.startsWith('#') ? firstLine.replace(/^#+\s*/, '') : (entry.title || 'Untitled');
+    
+    // Use first line as title if it's not empty, otherwise fallback to entry.title or 'Untitled'
+    let title = firstLine;
+    if (!title || title.startsWith('!') || title.startsWith('http')) {
+      // Skip if first line is empty, an image, or a URL
+      const lines = content.split('\n').filter(line => line.trim());
+      title = lines.find(line => !line.startsWith('!') && !line.startsWith('http') && line.trim()) || entry.title || 'Untitled';
+    }
+    
+    // Remove markdown headers if present
+    if (title.startsWith('#')) {
+      title = title.replace(/^#+\s*/, '');
+    }
     
     return {
       title: title,
@@ -309,7 +330,19 @@ class DayOneProcessor {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     
-    const slug = this.generateSlug(entry.title || 'untitled');
+    // Extract title the same way we do in generateFrontmatter
+    const content = entry.text || '';
+    const firstLine = content.split('\n')[0].trim();
+    let title = firstLine;
+    if (!title || title.startsWith('!') || title.startsWith('http')) {
+      const lines = content.split('\n').filter(line => line.trim());
+      title = lines.find(line => !line.startsWith('!') && !line.startsWith('http') && line.trim()) || entry.title || 'untitled';
+    }
+    if (title.startsWith('#')) {
+      title = title.replace(/^#+\s*/, '');
+    }
+    
+    const slug = this.generateSlug(title);
     
     return path.join(this.postsDir, String(year), month, `${slug}.md`);
   }

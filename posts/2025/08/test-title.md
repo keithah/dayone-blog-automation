@@ -1,5 +1,5 @@
 ---
-title: Untitled
+title: Test title
 publishDate: '2025-08-07T18:49:36.000Z'
 editDate: '2025-08-15T19:22:08.605Z'
 uuid: 0D6B8D863AD841008103D3D27F42EAFC
@@ -18,8 +18,6 @@ weather:
   description: Partly Cloudy
   temperature: 17.540000915527344
 ---
-Test title
-
 Welcome to my test blog\!
 
 
@@ -37,4 +35,4 @@ https://www/.apple/.com/ios/home/
 
 Also grabbed some switches from Amazon: https://www/.amazon/.com/dp/B017LRCG38/?tag=someaffiliatelink%5C-20&utm%5C_source=blog
 
-#personal #test 
+#personal #test
