@@ -1,10 +1,11 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/router'
-import { getAllPosts, getPostBySlug } from '../../../lib/posts'
+import Layout from '../../../components/Layout'
+import { getAllPosts, getPostBySlug, getAllCategories } from '../../../lib/posts'
 import { markdownToHtml } from '../../../lib/markdownToHtml'
 
-export default function PostPage({ post }) {
+export default function PostPage({ post, categories }) {
   const router = useRouter()
   
   if (router.isFallback) {
@@ -12,12 +13,12 @@ export default function PostPage({ post }) {
   }
 
   return (
-    <div className="container">
+    <Layout categories={categories}>
       <article className="post">
         <header className="post-header">
           <nav className="breadcrumb">
             <Link href="/">Home</Link> / 
-            <Link href="/blog">Blog</Link> / 
+            <Link href="/">Posts</Link> / 
             <Link href={`/blog/${post.category}`}>{post.category}</Link> / 
             {post.title}
           </nav>
@@ -52,7 +53,7 @@ export default function PostPage({ post }) {
             {post.images.map((image, index) => (
               <div key={index} className="image-container">
                 <Image
-                  src={`/${image}`}
+                  src={`/images/${image}`}
                   alt={`Image ${index + 1}`}
                   width={800}
                   height={600}
@@ -70,13 +71,13 @@ export default function PostPage({ post }) {
         
         <footer className="post-footer">
           <div className="post-nav">
-            <Link href={`/blog/${post.category}`}>
-              ← Back to {post.category}
+            <Link href="/">
+              ← Back to Posts
             </Link>
           </div>
         </footer>
       </article>
-    </div>
+    </Layout>
   )
 }
 
@@ -96,12 +97,20 @@ export async function getStaticProps({ params }) {
   
   const content = await markdownToHtml(post.content || '')
   
+  const allPosts = getAllPosts(['category'])
+  const allCategories = getAllCategories()
+  const categories = allCategories.map(categoryName => {
+    const count = allPosts.filter(p => p.category === categoryName).length
+    return { name: categoryName, count }
+  })
+  
   return {
     props: {
       post: {
         ...post,
         content,
       },
+      categories,
     },
   }
 }
