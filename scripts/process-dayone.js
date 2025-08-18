@@ -293,7 +293,6 @@ class DayOneProcessor {
       editDate: new Date(entry.modifiedDate || entry.creationDate).toISOString(),
       uuid: entry.uuid,
       tags: entry.tags || [],
-      category: this.determineCategory(entry.tags || []),
       images: images.map(img => img.filename),
       location: entry.location ? {
         name: entry.location.placeName || entry.location.localityName,
@@ -306,11 +305,6 @@ class DayOneProcessor {
     };
   }
 
-  determineCategory(tags) {
-    const categories = ['hardware', 'software', 'hacking'];
-    const categoryTag = tags.find(tag => categories.includes(tag.toLowerCase()));
-    return categoryTag ? categoryTag.toLowerCase() : 'general';
-  }
 
   generateMarkdown(content, links) {
     // Replace original links with cleaned versions
@@ -326,10 +320,6 @@ class DayOneProcessor {
   }
 
   generatePostPath(entry) {
-    const date = new Date(entry.creationDate);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    
     // Extract title the same way we do in generateFrontmatter
     const content = entry.text || '';
     const firstLine = content.split('\n')[0].trim();
@@ -344,7 +334,8 @@ class DayOneProcessor {
     
     const slug = this.generateSlug(title);
     
-    return path.join(this.postsDir, String(year), month, `${slug}.md`);
+    // Simple flat structure - all posts in posts directory
+    return path.join(this.postsDir, `${slug}.md`);
   }
 
   generateSlug(title) {

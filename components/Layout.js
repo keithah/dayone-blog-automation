@@ -54,7 +54,7 @@ export default function Layout({ children, categories = [], showSidebar = true }
                 {categories.map((category) => (
                   <Link 
                     key={category.name} 
-                    href={`/blog/${category.name}`}
+                    href={`/tag/${category.name}`}
                     className="category-item"
                   >
                     {category.name} ({category.count})

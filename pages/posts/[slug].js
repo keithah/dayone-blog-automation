@@ -1,11 +1,11 @@
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/router'
-import Layout from '../../../components/Layout'
-import { getAllPosts, getPostBySlug, getAllCategories } from '../../../lib/posts'
-import { markdownToHtml } from '../../../lib/markdownToHtml'
+import Layout from '../../components/Layout'
+import { getAllPosts, getPostBySlug, getAllTags } from '../../lib/posts'
+import { markdownToHtml } from '../../lib/markdownToHtml'
 
-export default function PostPage({ post, categories }) {
+export default function PostPage({ post, tagCategories }) {
   const router = useRouter()
   
   if (router.isFallback) {
@@ -13,13 +13,12 @@ export default function PostPage({ post, categories }) {
   }
 
   return (
-    <Layout categories={categories}>
+    <Layout categories={tagCategories}>
       <article className="post">
         <header className="post-header">
           <nav className="breadcrumb">
             <Link href="/">Home</Link> / 
             <Link href="/">Posts</Link> / 
-            <Link href={`/blog/${post.category}`}>{post.category}</Link> / 
             {post.title}
           </nav>
           
@@ -30,17 +29,12 @@ export default function PostPage({ post, categories }) {
             {post.editDate !== post.publishDate && (
               <time>Updated: {new Date(post.editDate).toLocaleDateString()}</time>
             )}
-            <span className="category">
-              <Link href={`/blog/${post.category}`}>
-                {post.category}
-              </Link>
-            </span>
           </div>
           
           {post.tags.length > 0 && (
             <div className="tags">
               {post.tags.map(tag => (
-                <Link key={tag} href={`/blog/tag/${tag}`} className="tag">
+                <Link key={tag} href={`/tag/${tag}`} className="tag">
                   {tag}
                 </Link>
               ))}
@@ -82,12 +76,11 @@ export default function PostPage({ post, categories }) {
 }
 
 export async function getStaticProps({ params }) {
-  const { category, slug } = params
-  const post = getPostBySlug(category, slug, [
+  const { slug } = params
+  const post = getPostBySlug(slug, [
     'title',
     'publishDate', 
     'editDate',
-    'category',
     'tags',
     'slug',
     'uuid',
@@ -97,12 +90,13 @@ export async function getStaticProps({ params }) {
   
   const content = await markdownToHtml(post.content || '')
   
-  const allPosts = getAllPosts(['category'])
-  const allCategories = getAllCategories()
-  const categories = allCategories.map(categoryName => {
-    const count = allPosts.filter(p => p.category === categoryName).length
-    return { name: categoryName, count }
-  })
+  // Get all tags and count posts per tag
+  const allPosts = getAllPosts(['tags'])
+  const allTags = getAllTags()
+  const tagCategories = allTags.map(tagName => {
+    const count = allPosts.filter(p => p.tags && p.tags.includes(tagName)).length
+    return { name: tagName, count }
+  }).sort((a, b) => b.count - a.count)
   
   return {
     props: {
@@ -110,17 +104,16 @@ export async function getStaticProps({ params }) {
         ...post,
         content,
       },
-      categories,
+      tagCategories,
     },
   }
 }
 
 export async function getStaticPaths() {
-  const posts = getAllPosts(['slug', 'category'])
+  const posts = getAllPosts(['slug'])
   
   const paths = posts.map(post => ({
     params: { 
-      category: post.category, 
       slug: post.slug 
     }
   }))
